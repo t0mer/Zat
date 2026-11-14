@@ -70,6 +70,9 @@ static bool meterOnline = false;
 static bool linkOn = false;
 static bool discoveryDue = true;
 static uint32_t lastMqttAttemptMs = 0;
+static uint32_t lastAvailabilityMs = 0;
+// Availability topics are retained; republish them so HA recovers if the broker loses them
+static const uint32_t AVAILABILITY_REPUBLISH_MS = 30000;
 static uint32_t packets = 0;
 static uint32_t lostPackets = 0;
 static int32_t lastSeq = -1;
@@ -189,6 +192,12 @@ static void serviceNetwork() {
   if (discoveryDue) {
     discoveryDue = false;
     publishDiscovery();
+    lastAvailabilityMs = millis();
+  } else if (millis() - lastAvailabilityMs >= AVAILABILITY_REPUBLISH_MS) {
+    lastAvailabilityMs = millis();
+    publish("bridge", "online");
+    publish("meter", meterOnline ? "online" : "offline");
+    publish("link", linkOn ? "ON" : "OFF");
   }
 }
 
