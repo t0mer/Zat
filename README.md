@@ -340,6 +340,43 @@ tariff values are present.
 For the Home Assistant **Energy dashboard**, use `Energy Total` as grid consumption and
 `Export Total` as return to grid. You can also add the per-tariff sensors separately.
 
+### Dashboard
+
+The `homeassistant/` folder holds a ready-made dashboard and the helper sensors it needs. They
+come from [mp3llll/iec-p1-esphome-3phase](https://github.com/mp3llll/iec-p1-esphome-3phase)
+(MIT) and use the same entity IDs (`sensor.electricity_meter_*`) as this receiver. The card
+text is in Hebrew and laid out right to left.
+
+![Home Assistant electricity dashboard](assets/screenshots/ha-dashboard.png)
+
+| File | What it is |
+|------|------------|
+| `homeassistant/configuration.yaml` | Helper sensors: daily and monthly `utility_meter`, baseload, peak today, comparison with yesterday, cost and month forecast |
+| `homeassistant/dashboard-views.yaml` | The full dashboard. Paste it into the **Raw configuration editor** |
+| `homeassistant/dashboard.yaml` | The same dashboard as a single card, to paste into a **Manual** card on an existing dashboard |
+
+**Requirements.** The dashboard uses three custom cards that are not part of Home Assistant.
+Install them from [HACS](https://hacs.xyz): **Mushroom**, **ApexCharts Card** and **card-mod**
+(it provides `custom:mod-card`). Reload the browser after installing. Without them the
+dashboard shows "Configuration error" or "Custom element doesn't exist".
+
+**Install**
+
+1. Merge `homeassistant/configuration.yaml` into your own `configuration.yaml`. It adds
+   `utility_meter:`, `sensor:` and `template:` sections. If you already have one of these keys,
+   add the entries to it instead of repeating the key. Run Developer tools, YAML, **Check
+   configuration**, then restart Home Assistant.
+2. Settings, Dashboards, **Add dashboard**, then open it.
+3. Click the pencil icon, then the three-dot menu, then **Raw configuration editor**. Replace
+   everything with the contents of `homeassistant/dashboard-views.yaml` and save.
+
+**Adjust before relying on the numbers**
+
+- **Price.** The `Electricity Price` sensor uses `price_with_vat = 0.6352` ILS/kWh and a 0%
+  discount, and `Electricity Forecast Month` uses `fixed_charge = 0`. Change them to match your
+  tariff and bill.
+- **Gauge limit.** The load gauge uses `max: 17` (3x25 A). Set it to `27` for 3x40 A.
+
 ## Radio packet format
 
 Defined in `p1_packet.h`; little-endian, 59 bytes:
@@ -404,6 +441,11 @@ P1LoRaTransmitter/
 P1LoRaReceiver/
   P1LoRaReceiver.ino      packet handling, MQTT, HA discovery, OTA
   secrets.h               WiFi / MQTT / OTA credentials
+homeassistant/
+  configuration.yaml      helper sensors for the dashboard
+  dashboard-views.yaml    full dashboard (raw configuration editor)
+  dashboard.yaml          same dashboard as a single card
+assets/screenshots/       README screenshots
 Both sketches (a copy in each folder):
   config.h                radio, pins, timing, topics
   lr22.{h,cpp}            DX-LR22 driver: AT configuration, send, frame receive
