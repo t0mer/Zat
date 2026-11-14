@@ -21,6 +21,7 @@ new unique IDs, so while the old ones are still registered, Home Assistant names
 - [How it works](#how-it-works)
 - [Hardware](#hardware)
 - [Wiring](#wiring)
+  - [The transmitter build](#the-transmitter-build)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Home Assistant and MQTT](#home-assistant-and-mqtt)
@@ -120,9 +121,14 @@ Both boards wire the LR22 the same way:
 | RXD | GPIO27 (ESP32 TX) | `PIN_LR22_TX` |
 | AUX | GPIO25 | `PIN_LR22_AUX` |
 | M0, M1 | not connected | `AT+SWITCH0` makes them module outputs |
-| VCC, GND | supply and ground | see the module datasheet |
+| VCC | ESP32 VIN (5V) | The module board is marked 3.3–5.5 V. |
+| GND | ESP32 GND | |
 
-The transmitter also connects to the meter's P1 port with an RJ12 (6P6C) cable:
+The transmitter also connects to the meter's P1 port with an RJ12 (6P6C) cable. In this build
+the ESP32 sits on a screw-terminal breakout board, and the LR22 power wires share the VIN and
+GND terminals with the P1 power:
+
+![P1 to ESP32 wiring: RJ12 pins, the two 1 kΩ resistors and the LR22 power](assets/zat.png)
 
 | P1 pin (RJ12) | Signal | Connect to |
 |---------------|--------|------------|
@@ -133,21 +139,16 @@ The transmitter also connects to the meter's P1 port with an RJ12 (6P6C) cable:
 | 5 | Data | GPIO16 (RX2, `PIN_P1_RX`), with a 1 kΩ pull-up resistor to 3.3V |
 | 6 | Power GND | ESP32 GND |
 
-```text
-P1 pin 1 (+5V) ──┬──────────────── ESP32 5V (VIN)
-                 └──[ 1kΩ ]──┐
-P1 pin 2 (Data Request) ─────┘
-
-ESP32 3.3V ──[ 1kΩ ]──┐
-P1 pin 5 (Data) ──────┴────────── ESP32 GPIO16 (RX2)
-
-P1 pin 3, pin 6 (GND) ──────────── ESP32 GND
-```
-
 The pull-up is needed because P1 Data is an open-collector output. Pulling it up to 3.3V, not
 5V, keeps the signal safe for the ESP32 input. The signal is still inverted in software, so no
 transistor or inverter is needed. The pin numbers follow the DSMR P1 standard; check your
 meter's documentation if it differs.
+
+### The transmitter build
+
+| Inside the enclosure | Installed at the meter |
+|:---:|:---:|
+| <img src="assets/zat-transmitter.jpeg" alt="Transmitter enclosure open: ESP32 on a screw-terminal board in the lid, DX-LR22 module in the box, RJ12 cable entering from the side" width="360"> | <img src="assets/zat-connected.jpeg" alt="Transmitter enclosure mounted next to the Kaifa meter, with the RJ12 cable plugged into the meter's P1 port and the LoRa antenna on top" width="360"> |
 
 ## Installation
 
