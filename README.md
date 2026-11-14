@@ -34,7 +34,8 @@ new unique IDs, so while the old ones are still registered, Home Assistant names
 ## Features
 
 - **Reads the P1 port directly.** The ESP32 inverts the UART itself on GPIO16, so you don't
-  need a transistor or an inverter chip.
+  need a transistor or an inverter chip. Two resistors and an RJ12 cable are all the extra
+  hardware it needs.
 - **Checks the telegram CRC.** Each telegram's CRC16 is checked, and a reading is used only if
   it matches. Dropped telegrams (bad CRC or cut off) are counted and reported to Home
   Assistant as `P1 CRC errors`.
@@ -85,7 +86,9 @@ flowchart LR
 |------|-----|-------|
 | ESP32-WROOM DevKit | 2 | One at the meter, one within WiFi range. Pin numbers in `config.h` assume a DevKit. |
 | DX-SMART DX-LR22-900T22D | 2 | UART LoRa modem (LLCC68). The driver follows the module's "serial port application guide" v2.2. |
-| P1 cable | 1 | From the meter's P1 port to the transmitter ESP32. |
+| RJ12 cable (6P6C) | 1 | From the meter's P1 port to the transmitter ESP32. Use a 6-wire cable: the transmitter takes its power from pins 1 and 6. |
+| Resistor, 1 kΩ | 1 | Between P1 pin 1 (+5V) and pin 2 (Data Request), so the meter sends telegrams. |
+| Resistor, 1 kΩ | 1 | Pull-up between GPIO16 (RX2, P1 Data) and 3.3V on the transmitter ESP32. |
 | Smart meter with a P1 port | 1 | The parser targets the IEC Kaifa three-phase meter (see below). |
 
 The transmitter is meant to be powered from the meter's P1 port (see the comment at the top of
@@ -119,9 +122,32 @@ Both boards wire the LR22 the same way:
 | M0, M1 | not connected | `AT+SWITCH0` makes them module outputs |
 | VCC, GND | supply and ground | see the module datasheet |
 
-The transmitter also needs the meter's P1 **Data** line on **GPIO16** (`PIN_P1_RX`), plus a
-shared ground. The signal is inverted in software, so no extra parts are needed. For the P1
-connector pinout, see your meter's documentation.
+The transmitter also connects to the meter's P1 port with an RJ12 (6P6C) cable:
+
+| P1 pin (RJ12) | Signal | Connect to |
+|---------------|--------|------------|
+| 1 | +5V | ESP32 5V (VIN), and through a 1 kΩ resistor to pin 2 |
+| 2 | Data Request | Through a 1 kΩ resistor to pin 1 (+5V); this enables the P1 output |
+| 3 | Data GND | ESP32 GND |
+| 4 | not used | — |
+| 5 | Data | GPIO16 (RX2, `PIN_P1_RX`), with a 1 kΩ pull-up resistor to 3.3V |
+| 6 | Power GND | ESP32 GND |
+
+```text
+P1 pin 1 (+5V) ──┬──────────────── ESP32 5V (VIN)
+                 └──[ 1kΩ ]──┐
+P1 pin 2 (Data Request) ─────┘
+
+ESP32 3.3V ──[ 1kΩ ]──┐
+P1 pin 5 (Data) ──────┴────────── ESP32 GPIO16 (RX2)
+
+P1 pin 3, pin 6 (GND) ──────────── ESP32 GND
+```
+
+The pull-up is needed because P1 Data is an open-collector output. Pulling it up to 3.3V, not
+5V, keeps the signal safe for the ESP32 input. The signal is still inverted in software, so no
+transistor or inverter is needed. The pin numbers follow the DSMR P1 standard; check your
+meter's documentation if it differs.
 
 ## Installation
 
@@ -360,7 +386,7 @@ serial log. A jump of 1000 or more is treated as a transmitter restart.
 | `LR22: <NAME> not supported here, skipped` | The module firmware doesn't know that AT command. Harmless if the remaining settings match the other side. |
 | `TX seq=… FAILED: LR22 busy` | AUX stayed high for 500 ms. Check the AUX wiring. |
 | `P1 telegram dropped: bad CRC` | Noise or a loose P1 cable. The count also shows in Home Assistant as `P1 CRC errors`. |
-| `TX seq=… status (no P1 data)` | The transmitter gets no valid telegrams. Check the P1 Data wiring (GPIO16), the shared ground, and that the meter's P1 port is enabled. |
+| `TX seq=… status (no P1 data)` | The transmitter gets no valid telegrams. Check the P1 Data wiring (GPIO16) and its pull-up to 3.3V, the resistor between P1 pins 1 and 2 (Data Request), the ground, and that the meter's P1 port is enabled. |
 | `RX from another network (0x…), ignored` | Another pair is using the same channel. Use different `NETWORK_ID` values. |
 | `RX … bytes, no valid packet` | Bytes arrived but held no valid packet: another LoRa device on the same channel and air rate, or the two sketches have different copies of `p1_packet.*`. |
 | No `RX` lines at all on the receiver | The two sides have a different `LR22_LEVEL` or `LR22_CHANNEL` (the modules can't hear each other), or the transmitter isn't sending. |
