@@ -10,7 +10,9 @@ another building). The transmitter keeps WiFi and Bluetooth off.
 The Home Assistant entities keep the names used by an earlier ESPHome version of this project
 (device "Electricity meter", so `sensor.electricity_meter_power`,
 `sensor.electricity_meter_energy_total`, …). Dashboards and automations built for that version
-keep working.
+keep working once the old ESPHome device is removed from Home Assistant. The new entities have
+new unique IDs, so while the old ones are still registered, Home Assistant names the new ones
+`sensor.electricity_meter_power_2` and so on.
 <!-- TODO: verify: link to the ESPHome project this replaces -->
 
 ## Contents
@@ -34,7 +36,8 @@ keep working.
 - **Reads the P1 port directly.** The ESP32 inverts the UART itself on GPIO16, so you don't
   need a transistor or an inverter chip.
 - **Checks the telegram CRC.** Each telegram's CRC16 is checked, and a reading is used only if
-  it matches. Bad telegrams are counted and reported to Home Assistant as `P1 CRC errors`.
+  it matches. Dropped telegrams (bad CRC or cut off) are counted and reported to Home
+  Assistant as `P1 CRC errors`.
 - **No float rounding.** Values are parsed and sent as fixed-point integers (Wh, W, 0.1 V,
   0.01 A), so kWh totals keep all three decimals.
 - **Compact radio packets.** Each reading is 59 bytes with a CRC-8, a sequence number and a
@@ -59,7 +62,7 @@ keep working.
 flowchart LR
     M[Smart meter<br/>P1 port] -- "DSMR telegrams<br/>115200 8N1, inverted" --> TX[ESP32 transmitter<br/>P1LoRaTransmitter]
     TX -- UART 9600 --> L1[DX-LR22]
-    L1 -. "LoRa, 59-byte packet<br/>every 5 s" .-> L2[DX-LR22]
+    L1 -. "LoRa, 59-byte packet<br/>at most every 5 s" .-> L2[DX-LR22]
     L2 -- "UART 9600<br/>+ RSSI byte" --> RX[ESP32 receiver<br/>P1LoRaReceiver]
     RX -- "WiFi / MQTT<br/>HA discovery" --> HA[MQTT broker<br/>Home Assistant]
 ```
@@ -73,7 +76,8 @@ flowchart LR
 2. **Receiver** (`P1LoRaReceiver`): drops packets that are malformed or carry another network
    ID. It publishes each value to MQTT and adds two computed values, `Energy Total` and
    `Export Total` (T1 + T2 + T3). It also reports the LoRa RSSI of each packet and the
-   transmitter's P1 CRC error count.
+   transmitter's P1 CRC error count. Readings that arrive while the receiver is disconnected
+   from MQTT are logged to serial but not buffered or published.
 
 ## Hardware
 
@@ -184,8 +188,12 @@ RX seq=13 fields=0x3FFFF RSSI=-62 received=13 lost=0
 
 ## Configuration
 
-All settings are compile-time `#define`s. Settings wrapped in `#ifndef` can also be overridden
-with a build flag (for example `-DNETWORK_ID=0xA102`).
+All settings are compile-time `#define`s. Five of them can also be overridden with a build
+flag instead of editing `config.h`: `LR22_LEVEL`, `LR22_CHANNEL`, `LR22_POWER_DBM`,
+`NETWORK_ID` and `TEST_MODE` (transmitter only), for example `-DNETWORK_ID=0xA102`. The
+`LR22_*` values are C strings (`"3"`), so a flag must keep the quotes, e.g. `-DLR22_LEVEL=\"2\"`.
+Each sketch is built separately, so pass the same pairing flags to both builds. All other
+settings (pins, timing, MQTT, `secrets.h`) must be changed in the files.
 
 ### Radio and pairing (`config.h`, both sketches)
 
@@ -285,8 +293,8 @@ Discovery configs go to `homeassistant/sensor/p1lora_a101/<key>/config` and
 |-----|------|------|--------------|-------------|
 | `energy_t1`, `energy_t2`, `energy_t3` | Energy T1–T3 | kWh | energy | total_increasing |
 | `export_t1`, `export_t2`, `export_t3` | Export T1–T3 | kWh | energy | total_increasing |
-| `energy_total` | Energy Total (T1+T2+T3) | kWh | energy | total_increasing |
-| `export_total` | Export Total (T1+T2+T3) | kWh | energy | total_increasing |
+| `energy_total` | Energy Total (sum of T1–T3) | kWh | energy | total_increasing |
+| `export_total` | Export Total (sum of T1–T3) | kWh | energy | total_increasing |
 | `power` | Power | kW | power | measurement |
 | `power_export` | Power Export | kW | power | measurement |
 | `power_l1`, `power_l2`, `power_l3` | Power L1–L3 | kW | power | measurement |
@@ -316,7 +324,7 @@ Defined in `p1_packet.h`; little-endian, 59 bytes:
 | 2–3 | Network ID |
 | 4–5 | Sequence number |
 | 6–8 | Present mask (bit *i* = field *i* was in the telegram); `0` = status packet |
-| 9–10 | P1 telegrams dropped for bad CRC since the transmitter started |
+| 9–10 | P1 telegrams dropped (bad CRC or cut off) since the transmitter started; 16-bit, wraps |
 | 11–34 | Energy imported T1–T3 and exported T1–T3, 6 × uint32 Wh |
 | 35 | Active tariff |
 | 36–45 | Power import, export, L1, L2, L3, 5 × uint16 W |
@@ -348,13 +356,14 @@ serial log. A jump of 1000 or more is treated as a transmitter restart.
 
 | Log message | Likely cause |
 |-------------|--------------|
-| `LR22: no answer to +++ (check wiring, 9600 baud)` | TXD/RXD swapped, AUX not connected, or the module isn't powered. The board keeps running with the module's current settings. |
+| `LR22: no answer to +++ (check wiring, 9600 baud)` | TXD/RXD swapped, wrong RX/TX pins, or the module isn't powered. The board keeps running with the module's current settings. |
 | `LR22: <NAME> not supported here, skipped` | The module firmware doesn't know that AT command. Harmless if the remaining settings match the other side. |
 | `TX seq=… FAILED: LR22 busy` | AUX stayed high for 500 ms. Check the AUX wiring. |
 | `P1 telegram dropped: bad CRC` | Noise or a loose P1 cable. The count also shows in Home Assistant as `P1 CRC errors`. |
 | `TX seq=… status (no P1 data)` | The transmitter gets no valid telegrams. Check the P1 Data wiring (GPIO16), the shared ground, and that the meter's P1 port is enabled. |
 | `RX from another network (0x…), ignored` | Another pair is using the same channel. Use different `NETWORK_ID` values. |
-| `RX … bytes, no valid packet` | Radio interference, or the two sides have a different `LR22_LEVEL` or `LR22_CHANNEL`. |
+| `RX … bytes, no valid packet` | Bytes arrived but held no valid packet: another LoRa device on the same channel and air rate, or the two sketches have different copies of `p1_packet.*`. |
+| No `RX` lines at all on the receiver | The two sides have a different `LR22_LEVEL` or `LR22_CHANNEL` (the modules can't hear each other), or the transmitter isn't sending. |
 | `MQTT connecting... failed, state <n>` | Wrong `MQTT_HOST`, port or credentials. `<n>` is the PubSubClient state code (e.g. `5` = not authorized). |
 | Meter entities unavailable, `LoRa link` on | Status packets arrive but no meter data. See "status (no P1 data)" above. |
 | All energy sensors stay empty | Your meter uses different OBIS codes. See [Hardware](#hardware). |
