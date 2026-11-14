@@ -355,6 +355,15 @@ text is in Hebrew and laid out right to left.
 | `homeassistant/dashboard-views.yaml` | The full dashboard. Paste it into the **Raw configuration editor** |
 | `homeassistant/dashboard.yaml` | The same dashboard as a single card, to paste into a **Manual** card on an existing dashboard |
 
+Click a tile on the dashboard to open its history. Examples:
+
+| | |
+|---|---|
+| ![Power history, 5-minute aggregated](assets/Consumption.png) | ![Electricity Peak Today history](assets/peak.png) |
+| ![Electricity Cost Today history](assets/cost-today.png) | ![Power split between the three phases](assets/phases.png) |
+| ![Power L1 history](assets/power-l1.png) | ![Power L2 history](assets/power-l2.png) |
+| ![Power L3 history](assets/power-l3.png) | ![Power history](assets/power.png) |
+
 **Requirements.** The dashboard uses three custom cards that are not part of Home Assistant.
 Install them from [HACS](https://hacs.xyz): **Mushroom**, **ApexCharts Card** and **card-mod**
 (it provides `custom:mod-card`). Reload the browser after installing. Without them the
